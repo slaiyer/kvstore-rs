@@ -2,10 +2,18 @@ use clap::{Parser, Subcommand};
 use std::process;
 
 fn main() {
+    let mut store = kvs::KvStore::new();
+
     match Cli::parse().command {
-        cmd @ Commands::Get { .. } | cmd @ Commands::Set { .. } | cmd @ Commands::Rm { .. } => {
-            exit_subcommand_invalid(cmd)
-        }
+        Commands::Get { key } => match store.get(key.clone()) {
+            Some(value) => println!("{key}: {value}"),
+            _ => {
+                eprintln!("key not found: {key}");
+                process::exit(3)
+            }
+        },
+        Commands::Set { key, value } => store.set(key, value),
+        Commands::Rm { key } => store.remove(key),
     }
 }
 
@@ -32,9 +40,4 @@ enum Commands {
         #[arg(required = true)]
         key: String,
     },
-}
-
-fn exit_subcommand_invalid(cmd: Commands) {
-    eprintln!("unimplemented: {cmd:?}");
-    process::exit(2)
 }

@@ -1,7 +1,7 @@
 [package]
 name = "kvs"
 version = "0.1.0"
-authors = ["Sidharth Iyer"]
+authors = ["slaiyer"]
 description = "A key-value store"
 edition = "2021"
 
@@ -18,3 +18,4 @@ doctest = false
 
 [dependencies]
 clap = { version = "4.5.7", features = ["derive"] }
+dashmap = "5.5.3"

@@ -1,5 +1,9 @@
+use dashmap::DashMap;
+
 #[derive(Default)]
-pub struct KvStore {}
+pub struct KvStore {
+    store: DashMap<String, String>,
+}
 
 impl KvStore {
     pub fn new() -> Self {
@@ -7,14 +11,14 @@ impl KvStore {
     }
 
     pub fn set(&mut self, key: String, value: String) {
-        todo!()
+        let _ = self.store.insert(key, value);
     }
 
     pub fn get(&self, key: String) -> Option<String> {
-        todo!()
+        self.store.get(&key).map(|v| v.value().clone())
     }
 
     pub fn remove(&mut self, key: String) {
-        todo!()
+        let _ = self.store.remove(&key);
     }
 }
