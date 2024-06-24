@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic, future_incompatible)]
+
 use clap::{Parser, Subcommand};
 use std::process;
 
@@ -5,15 +7,16 @@ fn main() {
     let mut store = kvs::KvStore::new();
 
     match Cli::parse().command {
-        Commands::Get { key } => match store.get(key.clone()) {
-            Some(value) => println!("{key}: {value}"),
-            _ => {
+        Commands::Get { key } => {
+            if let Some(value) = store.get(&key) {
+                println!("{key}: {value}");
+            } else {
                 eprintln!("key not found: {key}");
                 process::exit(3)
             }
-        },
+        }
         Commands::Set { key, value } => store.set(key, value),
-        Commands::Rm { key } => store.remove(key),
+        Commands::Rm { key } => store.remove(&key),
     }
 }
 
