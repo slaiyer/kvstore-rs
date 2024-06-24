@@ -5,6 +5,10 @@ authors = ["slaiyer"]
 description = "A key-value store"
 edition = "2021"
 
+[dependencies]
+clap = { version = "4.5.7", features = ["derive"] }
+dashmap = "5.5.3"
+
 [dev-dependencies]
 assert_cmd = "2.0.14"
 predicates = "3.1.0"
@@ -15,7 +19,3 @@ test = false
 [[bin]]
 name = "kvs"
 doctest = false
-
-[dependencies]
-clap = { version = "4.5.7", features = ["derive"] }
-dashmap = "5.5.3"
