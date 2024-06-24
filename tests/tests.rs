@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic, future_incompatible)]
+
 use assert_cmd::prelude::*;
 use kvs::KvStore;
 use predicates::str::contains;
