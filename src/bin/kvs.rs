@@ -4,20 +4,18 @@
 //! Key-value (KV) store CLI client
 
 use clap::Parser;
-use kvs::{Command, KvStoreError, Result};
+use kvs::{Command, Result};
+use std::env;
 
 fn main() -> Result<()> {
-    let store = kvs::KvStore::new();
-    let cmd = Cli::parse().command;
+    let current_dir = env::current_dir().unwrap();
+    let store = kvs::KvStore::open(current_dir)?;
 
+    let cmd = Cli::parse().command;
     match store.execute(cmd) {
         Err(e) => {
             println!("{e}");
-            if let KvStoreError::FailedGet(_) = e {
-                Ok(())
-            } else {
-                Err(e)
-            }
+            Err(e)
         }
         Ok(s) => {
             println!("{s}");

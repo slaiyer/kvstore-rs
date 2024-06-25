@@ -6,12 +6,12 @@
 use clap::Subcommand;
 use dashmap::DashMap;
 use serde::{
-    de::{self, Error},
-    ser::Serialize,
-    Deserialize,
+    de::{self, Deserializer, SeqAccess, Visitor},
+    Deserialize, Serialize,
 };
 use std::{
-    fs::{File, OpenOptions},
+    fmt,
+    fs::{self, File, OpenOptions},
     io::{self, prelude::*},
     path::PathBuf,
     result,
@@ -19,11 +19,13 @@ use std::{
 use strum::{Display, EnumString};
 use thiserror::Error;
 
+/// Write-ahead log file name
+const WAL: &str = "wa.log";
+
 /// Key-value (KV) store wrapper
-#[derive(Default)]
 pub struct KvStore {
     store: DashMap<String, String>,
-    wal: Option<PathBuf>,
+    wal_handle: File,
 }
 
 /// Result wrapper type for KV store methods
@@ -31,48 +33,72 @@ pub type Result<T> = result::Result<T, KvStoreError>;
 
 /// Methods on KV store
 impl KvStore {
-    /// Returns empty `DashMap` with default hasher
-    #[must_use]
-    pub fn new() -> Self {
-        // TODO: scan current directory for WAL
-
-        Self::default()
-    }
-
     /// Constructs a new in-memory KV store by parsing on-disk write-ahead log (WAL)
     ///
     /// # Errors
-    /// Returns `Err` if on-disk WAL read fails
+    /// Returns `Err` if WAL move or read fails
+    ///
+    /// # Panics
+    /// Aborts on encountering unexpected WAL file name
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
-        let mut store = Self::new();
-        let wal = path.into().join("wa.log");
-        store.wal = Some(wal.clone());
+        let cwd: PathBuf = path.into();
+        let wal_path = cwd.join(WAL);
+        let mut wal_path_moved = wal_path.clone();
 
-        match File::open(wal) {
-            Err(e) => eprintln!("{e:?}"),
-            Ok(wal) => store.wal_read(wal)?,
+        let wal_exists = wal_path.exists() && wal_path.is_file();
+
+        if wal_exists {
+            let mut ext = wal_path.extension().unwrap().to_os_string();
+            ext.push(".old");
+            wal_path_moved.set_extension(ext);
+
+            fs::rename(&wal_path, &wal_path_moved).map_err(KvStoreError::FailedWalRename)?;
+        }
+
+        let store = Self {
+            store: DashMap::new(),
+            wal_handle: OpenOptions::new()
+                .truncate(true)
+                .create(true)
+                .write(true)
+                .open(&wal_path)
+                .map_err(KvStoreError::FailedWalOpen)?,
         };
+
+        if wal_exists {
+            match File::open(&wal_path_moved) {
+                Err(e) => eprintln!("{e}"),
+                Ok(wal_old) => match store.wal_read(wal_old) {
+                    Err(e) => return Err(e),
+                    _ => {
+                        if let Err(e) = fs::remove_file(wal_path_moved) {
+                            eprintln!("Failed to remove old WAL: {e}");
+                        }
+                    }
+                },
+            };
+        }
 
         Ok(store)
     }
 
     fn wal_read(&self, wal: File) -> Result<()> {
-        for line in io::BufReader::new(wal).lines() {
-            println!("[wal] {}", self.wal_line_read(line)?);
+        for line_result in io::BufReader::new(wal).lines() {
+            println!("{}", self.wal_line_read(line_result)?);
         }
 
         Ok(())
     }
 
-    fn wal_line_read(&self, line: result::Result<String, io::Error>) -> Result<String> {
-        match line {
-            Err(e) => Err(KvStoreError::FailedIo(e)),
+    fn wal_line_read(&self, line_result: result::Result<String, io::Error>) -> Result<String> {
+        match line_result {
+            Err(e) => Err(KvStoreError::FailedWalLineRead(e)),
             Ok(line) => Ok(self.wal_line_deserialize(&line)?),
         }
     }
 
     fn wal_line_deserialize(&self, line: &str) -> Result<String> {
-        match serde_json::from_str(line) {
+        match serde_json::from_str(&format!("[\"{}\"]", line.replace(' ', "\",\""))) {
             Err(e) => Err(KvStoreError::DeserializeCommand(e)),
             Ok(cmd) => Ok(self.execute(cmd)?),
         }
@@ -88,7 +114,7 @@ impl KvStore {
                 Err(e) => Err(e),
                 Ok(value) => match value {
                     Some(v) => Ok(v),
-                    _ => Err(KvStoreError::FailedGet(key)),
+                    _ => Ok(String::new()),
                 },
             },
             Command::Set { key, value } => match self.set(key.clone(), value) {
@@ -102,21 +128,15 @@ impl KvStore {
         }
     }
 
-    /// TODO: Cache WAL file handle to avoid opening and closing file for each operation logged
-    ///
     /// Records operations in write-ahead log (WAL) if WAL is provided
     ///
     /// # Errors
     /// Returns `Err` if `open` or `write_all` fail
     fn wal_write(&self, s: &str) -> Result<()> {
-        match self.wal {
-            Some(ref wal) => Ok(OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(wal)?
-                .write_all(s.as_bytes())?),
-            _ => Ok(()),
-        }
+        let s = format!("{s}\n");
+        (&self.wal_handle)
+            .write_all(s.as_bytes())
+            .map_err(KvStoreError::FailedWalWrite)
     }
 
     /// Inserts key-value pair into store
@@ -124,6 +144,8 @@ impl KvStore {
     /// # Errors
     /// Returns `Err` if on-disk WAL write fails
     pub fn set(&self, key: String, value: String) -> Result<()> {
+        // TODO: Use serde to serialize command
+
         self.wal_write(&format!("set {key} {value}"))?;
         self.store.insert(key, value);
 
@@ -135,9 +157,11 @@ impl KvStore {
     /// # Errors
     /// Returns `Err` if KV store read fails
     pub fn get(&self, key: String) -> Result<Option<String>> {
-        match self.store.get(&key) {
-            Some(v) => Ok(Some(v.value().to_owned())),
-            _ => Err(KvStoreError::FailedGet(key)),
+        if let Some(v) = self.store.get(&key) {
+            Ok(Some(v.value().to_owned()))
+        } else {
+            println!("Key not found: {key}");
+            Ok(None)
         }
     }
 
@@ -146,6 +170,8 @@ impl KvStore {
     /// # Errors
     /// Returns `Err` if on-disk WAL write fails
     pub fn remove(&self, key: String) -> Result<()> {
+        // TODO: Use serde to serialize command
+
         self.wal_write(&format!("rm {key}"))?;
         match self.store.remove(&key) {
             None => Err(KvStoreError::FailedRm(key)),
@@ -154,10 +180,30 @@ impl KvStore {
     }
 }
 
+impl Drop for KvStore {
+    fn drop(&mut self) {
+        if let Err(e) = self.wal_handle.flush() {
+            eprintln!("Failed to flush buffer to WAL: {e}");
+        }
+    }
+}
+
 /// Error wrapper for KV store methods
 #[derive(Debug, Error)]
 pub enum KvStoreError {
-    /// Generic command deserializatio error wrapper
+    /// Failed old WAL rename
+    #[error("Failed to rename old WAL: {0}")]
+    FailedWalRename(io::Error),
+    /// Failed new WAL open
+    #[error("Failed to open new WAL: {0}")]
+    FailedWalOpen(io::Error),
+    /// Failed line read from WAL
+    #[error("Failed reading line from write-ahead log: {0}")]
+    FailedWalLineRead(io::Error),
+    /// Failed WAL write
+    #[error("Failed to write to WAL: {0}")]
+    FailedWalWrite(io::Error),
+    /// Generic command deserialization error wrapper
     #[error("Deserialization failure: {0}")]
     DeserializeCommand(#[from] serde_json::error::Error),
     /// Invalid/unsupported command
@@ -172,12 +218,6 @@ pub enum KvStoreError {
     /// Missing value for command
     #[error("Value not supplied: {0}")]
     MissingValue(String),
-    /// Failed WAL I/O
-    #[error("I/O failed on write-ahead log: {0}")]
-    FailedIo(#[from] io::Error),
-    /// Failed KV store read
-    #[error("Key not found: {0}")]
-    FailedGet(String),
     /// Failed KV store remove
     #[error("Key not found: {0}")]
     FailedRm(String),
@@ -213,6 +253,7 @@ pub enum Command {
 }
 
 /// Simple serializer for generating space-separated command representation for the WAL, mirroring the CLI input format
+/// TODO: Reconcile serializer with deserializer
 impl Serialize for Command {
     fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
     where
@@ -229,44 +270,49 @@ impl Serialize for Command {
     }
 }
 
-/// Simple deserializer for parsing space-separated command representation in the WAL, mirroring the CLI input format
+struct CommandVisitor;
+
+impl<'de> Visitor<'de> for CommandVisitor {
+    type Value = Command;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("space separated string with subcommand and arguments")
+    }
+
+    fn visit_seq<V>(self, mut seq: V) -> result::Result<Self::Value, V::Error>
+    where
+        V: SeqAccess<'de>,
+    {
+        let command: String = seq
+            .next_element()?
+            .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+
+        match command.as_str() {
+            "set" => {
+                let key = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let value = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                Ok(Command::Set { key, value })
+            }
+            "rm" => {
+                let key = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                Ok(Command::Rm { key })
+            }
+            _ => Err(de::Error::unknown_variant(&command, &["set", "rm"])),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for Command {
     fn deserialize<D>(deserializer: D) -> result::Result<Self, D::Error>
     where
-        D: de::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        let mut parts = s.split_ascii_whitespace();
-
-        match parts.next() {
-            None => Err(D::Error::custom(KvStoreError::MissingCommand)),
-            Some(cmd) => match cmd {
-                cmd @ "get" => match parts.next() {
-                    None => Err(D::Error::custom(KvStoreError::MissingKey(cmd.to_owned()))),
-                    Some(key) => Ok(Self::Get {
-                        key: key.to_owned(),
-                    }),
-                },
-                cmd @ "set" => match parts.next() {
-                    None => Err(D::Error::custom(KvStoreError::MissingKey(cmd.to_owned()))),
-                    Some(key) => match parts.next() {
-                        None => Err(D::Error::custom(KvStoreError::MissingValue(cmd.to_owned()))),
-                        Some(value) => Ok(Self::Set {
-                            key: key.to_owned(),
-                            value: value.to_owned(),
-                        }),
-                    },
-                },
-                cmd @ "rm" => match parts.next() {
-                    None => Err(D::Error::custom(KvStoreError::MissingKey(cmd.to_owned()))),
-                    Some(key) => Ok(Self::Rm {
-                        key: key.to_owned(),
-                    }),
-                },
-                cmd => Err(D::Error::custom(KvStoreError::InvalidCommand(
-                    cmd.to_owned(),
-                ))),
-            },
-        }
+        deserializer.deserialize_seq(CommandVisitor)
     }
 }

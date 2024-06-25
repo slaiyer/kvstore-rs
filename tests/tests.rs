@@ -14,7 +14,15 @@ fn serde_commands() {
     let get = kvs::Command::Get {
         key: "bruh".to_owned(),
     };
-    assert_tokens(&get, &[Token::BorrowedStr("get bruh")]);
+    assert_tokens(
+        &get,
+        &[
+            Token::Seq { len: Some(2) },
+            Token::String("get"),
+            Token::String("bruh"),
+            Token::SeqEnd,
+        ],
+    );
 
     let set = kvs::Command::Set {
         key: "bruh".to_owned(),
@@ -83,7 +91,6 @@ fn cli_set() {
         .stdout(is_empty().trim());
 }
 
-/// TODO: WAL read ineffective after store is dropped
 #[test]
 fn cli_get_stored() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
@@ -112,7 +119,6 @@ fn cli_get_stored() -> Result<()> {
     Ok(())
 }
 
-/// TODO: WAL read ineffective after store is dropped
 // `kvs rm <KEY>` should print nothing and exit with zero.
 #[test]
 fn cli_rm_stored() -> Result<()> {
@@ -136,7 +142,7 @@ fn cli_rm_stored() -> Result<()> {
         .current_dir(&temp_dir)
         .assert()
         .success()
-        .stdout(eq("Key not found").trim());
+        .stdout(contains("Key not found").trim());
 
     Ok(())
 }
