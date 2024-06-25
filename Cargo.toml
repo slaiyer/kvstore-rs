@@ -6,12 +6,26 @@ description = "A key-value store"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.7", features = ["derive"] }
-dashmap = "5.5.3"
+clap = { version = "4.5", features = ["derive"] }
+dashmap = "6.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+strum = { version = "0.26", features = ["derive"] }
+thiserror = "1.0"
 
 [dev-dependencies]
-assert_cmd = "2.0.14"
-predicates = "3.1.0"
+assert_cmd = "2.0"
+predicates = "3.1"
+serde_test = "1.0"
+tempfile = "3.0"
+walkdir = "2.2"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+strip = true
+panic = "abort"
 
 [lib]
 test = false

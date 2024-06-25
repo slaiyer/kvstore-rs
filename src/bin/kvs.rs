@@ -1,22 +1,33 @@
 #![warn(clippy::all, clippy::pedantic, future_incompatible)]
 
-use clap::{Parser, Subcommand};
-use std::process;
+use clap::Parser;
+use kvs::{Command, KvStoreError, Result};
 
-fn main() {
-    let mut store = kvs::KvStore::new();
+fn main() -> Result<()> {
+    let store = kvs::KvStore::new();
+    let cmd = Cli::parse().command;
 
-    match Cli::parse().command {
-        Commands::Get { key } => {
-            if let Some(value) = store.get(&key) {
-                println!("{key}: {value}");
-            } else {
-                eprintln!("key not found: {key}");
-                process::exit(3)
+    match store.execute(cmd) {
+        Err(e) => match e {
+            KvStoreError::DeserializeCommand(_)
+            | KvStoreError::InvalidCommand(_)
+            | KvStoreError::MissingKey(_)
+            | KvStoreError::MissingValue(_)
+            | KvStoreError::FailedRead(_)
+            | KvStoreError::FailedSet(_)
+            | KvStoreError::FailedRm => {
+                println!("{e}");
+                Err(e)
             }
+            KvStoreError::FailedGet => {
+                println!("{e}");
+                Ok(())
+            }
+        },
+        Ok(s) => {
+            println!("{s}");
+            Ok(())
         }
-        Commands::Set { key, value } => store.set(key, value),
-        Commands::Rm { key } => store.remove(&key),
     }
 }
 
@@ -24,23 +35,5 @@ fn main() {
 #[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Debug, Subcommand)]
-enum Commands {
-    Get {
-        #[arg(required = true)]
-        key: String,
-    },
-    Set {
-        #[arg(required = true)]
-        key: String,
-        #[arg(required = true)]
-        value: String,
-    },
-    Rm {
-        #[arg(required = true)]
-        key: String,
-    },
+    command: Command,
 }
