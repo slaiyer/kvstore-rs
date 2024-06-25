@@ -8,23 +8,14 @@ fn main() -> Result<()> {
     let cmd = Cli::parse().command;
 
     match store.execute(cmd) {
-        Err(e) => match e {
-            KvStoreError::DeserializeCommand(_)
-            | KvStoreError::InvalidCommand(_)
-            | KvStoreError::MissingCommand
-            | KvStoreError::MissingKey(_)
-            | KvStoreError::MissingValue(_)
-            | KvStoreError::FailedRead(_)
-            | KvStoreError::FailedSet(_)
-            | KvStoreError::FailedRm(_) => {
-                println!("{e}");
+        Err(e) => {
+            println!("{e}");
+            if let KvStoreError::FailedGet(_) = e {
+                Ok(())
+            } else {
                 Err(e)
             }
-            KvStoreError::FailedGet(_) => {
-                println!("{e}");
-                Ok(())
-            }
-        },
+        }
         Ok(s) => {
             println!("{s}");
             Ok(())
