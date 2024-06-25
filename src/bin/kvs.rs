@@ -11,6 +11,7 @@ fn main() -> Result<()> {
         Err(e) => match e {
             KvStoreError::DeserializeCommand(_)
             | KvStoreError::InvalidCommand(_)
+            | KvStoreError::MissingCommand
             | KvStoreError::MissingKey(_)
             | KvStoreError::MissingValue(_)
             | KvStoreError::FailedRead(_)

@@ -171,6 +171,9 @@ pub enum KvStoreError {
     /// Invalid/unsupported command
     #[error("invalid command: {0}")]
     InvalidCommand(String),
+    /// Invalid/unsupported command
+    #[error("missing command")]
+    MissingCommand,
     /// Missing key for command
     #[error("{0}: key not supplied")]
     MissingKey(String),
@@ -245,7 +248,7 @@ impl<'de> Deserialize<'de> for Command {
         let mut parts = s.split_ascii_whitespace();
 
         match parts.next() {
-            None => Err(D::Error::custom(KvStoreError::MissingKey("[]".to_owned()))),
+            None => Err(D::Error::custom(KvStoreError::MissingCommand)),
             Some(cmd) => match cmd {
                 cmd @ "get" => match parts.next() {
                     None => Err(D::Error::custom(KvStoreError::MissingKey(cmd.to_owned()))),
