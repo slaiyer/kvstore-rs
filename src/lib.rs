@@ -76,7 +76,7 @@ impl KvStore {
         line: result::Result<String, io::Error>,
     ) -> Option<result::Result<KvStore, KvStoreError>> {
         match line {
-            Err(_) => return Some(Err(KvStoreError::FailedRead(io::Error::last_os_error()))),
+            Err(e) => return Some(Err(KvStoreError::FailedRead(e))),
             Ok(line) => {
                 if let Some(value) = self.wal_line_deserialize(&line) {
                     return Some(value);
