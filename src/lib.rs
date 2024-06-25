@@ -34,6 +34,8 @@ impl KvStore {
     /// Returns empty `DashMap` with default hasher
     #[must_use]
     pub fn new() -> Self {
+        // TODO: scan current directory for WAL
+
         Self::default()
     }
 
