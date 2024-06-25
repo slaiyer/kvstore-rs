@@ -17,8 +17,8 @@ thiserror = "1.0"
 assert_cmd = "2.0"
 predicates = "3.1"
 serde_test = "1.0"
-tempfile = "3.0"
-walkdir = "2.2"
+tempfile = "3.10"
+walkdir = "2.5"
 
 [profile.release]
 opt-level = 3
