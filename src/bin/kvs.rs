@@ -1,4 +1,7 @@
+#![deny(missing_docs)]
 #![warn(clippy::all, clippy::pedantic, future_incompatible)]
+
+//! Key-value (KV) store CLI client
 
 use clap::Parser;
 use kvs::{Command, KvStoreError, Result};
