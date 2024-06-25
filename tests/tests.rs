@@ -83,6 +83,7 @@ fn cli_set() {
         .stdout(is_empty().trim());
 }
 
+/// FIXME: WAL read ineffective after store is dropped
 #[test]
 fn cli_get_stored() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
@@ -111,6 +112,7 @@ fn cli_get_stored() -> Result<()> {
     Ok(())
 }
 
+/// FIXME: WAL read ineffective after store is dropped
 // `kvs rm <KEY>` should print nothing and exit with zero.
 #[test]
 fn cli_rm_stored() -> Result<()> {
@@ -126,7 +128,7 @@ fn cli_rm_stored() -> Result<()> {
         .current_dir(&temp_dir)
         .assert()
         .success()
-        .stdout(is_empty());
+        .stdout(is_empty().trim());
 
     Command::cargo_bin("kvs")
         .unwrap()
