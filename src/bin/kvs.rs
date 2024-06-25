@@ -15,11 +15,11 @@ fn main() -> Result<()> {
             | KvStoreError::MissingValue(_)
             | KvStoreError::FailedRead(_)
             | KvStoreError::FailedSet(_)
-            | KvStoreError::FailedRm => {
+            | KvStoreError::FailedRm(_) => {
                 println!("{e}");
                 Err(e)
             }
-            KvStoreError::FailedGet => {
+            KvStoreError::FailedGet(_) => {
                 println!("{e}");
                 Ok(())
             }

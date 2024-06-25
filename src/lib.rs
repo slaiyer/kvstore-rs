@@ -52,25 +52,61 @@ impl KvStore {
         match fs::File::open(store.dir.join("wal.log")) {
             Err(e) => eprintln!("{e:?}"),
             Ok(wal) => {
-                for line in io::BufReader::new(wal).lines() {
-                    match line {
-                        Err(_) => return Err(KvStoreError::FailedRead(io::Error::last_os_error())),
-                        Ok(line) => match serde_json::from_str(line.as_str()) {
-                            Err(e) => return Err(KvStoreError::DeserializeCommand(e)),
-                            Ok(cmd) => match store.execute(cmd) {
-                                Err(e) => {
-                                    eprintln!("[wal] {e}");
-                                    return Err(e);
-                                }
-                                Ok(s) => println!("[wal] {s}"),
-                            },
-                        },
-                    };
+                if let Some(value) = store.wal_read(wal) {
+                    return value;
                 }
             }
         };
 
         Ok(store)
+    }
+
+    fn wal_read(&self, wal: fs::File) -> Option<result::Result<KvStore, KvStoreError>> {
+        for line in io::BufReader::new(wal).lines() {
+            if let Some(value) = self.wal_line_read(line) {
+                return Some(value);
+            }
+        }
+
+        None
+    }
+
+    fn wal_line_read(
+        &self,
+        line: result::Result<String, io::Error>,
+    ) -> Option<result::Result<KvStore, KvStoreError>> {
+        match line {
+            Err(_) => return Some(Err(KvStoreError::FailedRead(io::Error::last_os_error()))),
+            Ok(line) => {
+                if let Some(value) = self.wal_line_deserialize(&line) {
+                    return Some(value);
+                }
+            }
+        };
+        None
+    }
+
+    fn wal_line_deserialize(&self, line: &str) -> Option<result::Result<KvStore, KvStoreError>> {
+        match serde_json::from_str(line) {
+            Err(e) => return Some(Err(KvStoreError::DeserializeCommand(e))),
+            Ok(cmd) => {
+                if let Some(value) = self.wal_command_execute(cmd) {
+                    return Some(value);
+                }
+            }
+        }
+        None
+    }
+
+    fn wal_command_execute(&self, cmd: Command) -> Option<result::Result<KvStore, KvStoreError>> {
+        match self.execute(cmd) {
+            Err(e) => {
+                eprintln!("[wal] {e}");
+                return Some(Err(e));
+            }
+            Ok(s) => println!("[wal] {s}"),
+        }
+        None
     }
 
     /// Executes a command as an operation on the KV store
