@@ -43,10 +43,10 @@ impl KvStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let cwd: PathBuf = path.into();
         let wal_path = cwd.join(WAL);
+        let wal_exists = wal_path.exists() && wal_path.is_file();
         let mut wal_path_moved = wal_path.clone();
 
-        let wal_exists = wal_path.exists() && wal_path.is_file();
-
+        // Move existing WAL if it exists
         if wal_exists {
             let mut ext = wal_path.extension().unwrap().to_os_string();
             ext.push(".old");
@@ -55,6 +55,7 @@ impl KvStore {
             fs::rename(&wal_path, &wal_path_moved).map_err(KvStoreError::FailedWalRename)?;
         }
 
+        // Instantiate KV store with new WAL file handle
         let store = Self {
             store: DashMap::new(),
             wal_handle: OpenOptions::new()
@@ -65,21 +66,29 @@ impl KvStore {
                 .map_err(KvStoreError::FailedWalOpen)?,
         };
 
+        // Load old WAL if it exists
         if wal_exists {
-            match File::open(&wal_path_moved) {
-                Err(e) => eprintln!("{e}"),
-                Ok(wal_old) => match store.wal_read(wal_old) {
-                    Err(e) => return Err(e),
-                    _ => {
-                        if let Err(e) = fs::remove_file(wal_path_moved) {
-                            eprintln!("Failed to remove old WAL: {e}");
-                        }
-                    }
-                },
+            if let Err(e) = store.wal_load(&wal_path_moved) {
+                // Undo old WAL move if load fails
+                eprintln!("Failed to load old WAL: {e}");
+                fs::rename(wal_path_moved, wal_path).map_err(KvStoreError::FailedWalRestore)?;
+                return Err(e);
             };
         }
 
         Ok(store)
+    }
+
+    fn wal_load(&self, wal_path: &PathBuf) -> Result<()> {
+        let wal = File::open(wal_path).map_err(KvStoreError::FailedOldWalOpen)?;
+        self.wal_read(wal)?;
+
+        // Delete old WAL if load succeeds
+        if let Err(e) = fs::remove_file(wal_path) {
+            eprintln!("Failed to remove moved old WAL: {e}");
+        }
+
+        Ok(())
     }
 
     fn wal_read(&self, wal: File) -> Result<()> {
@@ -185,6 +194,10 @@ impl Drop for KvStore {
         if let Err(e) = self.wal_handle.flush() {
             eprintln!("Failed to flush buffer to WAL: {e}");
         }
+
+        if let Err(e) = self.wal_handle.sync_all() {
+            eprintln!("Failed to sync all to WAL: {e}");
+        }
     }
 }
 
@@ -194,9 +207,15 @@ pub enum KvStoreError {
     /// Failed old WAL rename
     #[error("Failed to rename old WAL: {0}")]
     FailedWalRename(io::Error),
+    /// Failed old WAL restore
+    #[error("Failed to restore old WAL: {0}")]
+    FailedWalRestore(io::Error),
     /// Failed new WAL open
     #[error("Failed to open new WAL: {0}")]
     FailedWalOpen(io::Error),
+    /// Failed old WAL open
+    #[error("Failed to open old WAL: {0}")]
+    FailedOldWalOpen(io::Error),
     /// Failed line read from WAL
     #[error("Failed reading line from write-ahead log: {0}")]
     FailedWalLineRead(io::Error),
