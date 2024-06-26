@@ -43,11 +43,11 @@ impl KvStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let cwd: PathBuf = path.into();
         let wal_path = cwd.join(WAL);
-        let wal_exists = wal_path.exists() && wal_path.is_file();
+        let old_wal_exists = wal_path.exists() && wal_path.is_file();
         let mut wal_path_moved = wal_path.clone();
 
         // Move existing WAL if it exists
-        if wal_exists {
+        if old_wal_exists {
             let mut ext = wal_path.extension().unwrap().to_os_string();
             ext.push(".old");
             wal_path_moved.set_extension(ext);
@@ -67,7 +67,7 @@ impl KvStore {
         };
 
         // Load old WAL if it exists
-        if wal_exists {
+        if old_wal_exists {
             if let Err(e) = store.wal_load(&wal_path_moved) {
                 // Undo old WAL move if load fails
                 eprintln!("Failed to load old WAL: {e}");
