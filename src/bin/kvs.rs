@@ -4,11 +4,11 @@
 //! Key-value (KV) store CLI client
 
 use clap::Parser;
-use kvs::{Command, Result};
+use kvs::{Command, KvStoreError, Result};
 use std::env;
 
 fn main() -> Result<()> {
-    let current_dir = env::current_dir().unwrap();
+    let current_dir = env::current_dir().map_err(KvStoreError::UnknownCwd)?;
     let store = kvs::KvStore::open(current_dir)?;
 
     let cmd = Cli::parse().command;

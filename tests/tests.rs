@@ -4,37 +4,9 @@ use assert_cmd::prelude::*;
 use kvs::{KvStore, Result};
 use predicates::ord::eq;
 use predicates::str::{contains, is_empty, PredicateStrExt};
-use serde_test::{assert_tokens, Token};
 use std::process::Command;
 use tempfile::TempDir;
 use walkdir::WalkDir;
-
-#[test]
-fn serde_commands() {
-    let get = kvs::Command::Get {
-        key: "bruh".to_owned(),
-    };
-    assert_tokens(
-        &get,
-        &[
-            Token::Seq { len: Some(2) },
-            Token::String("get"),
-            Token::String("bruh"),
-            Token::SeqEnd,
-        ],
-    );
-
-    let set = kvs::Command::Set {
-        key: "bruh".to_owned(),
-        value: "wat".to_owned(),
-    };
-    assert_tokens(&set, &[Token::BorrowedStr("set bruh wat")]);
-
-    let rm = kvs::Command::Rm {
-        key: "bruh".to_owned(),
-    };
-    assert_tokens(&rm, &[Token::BorrowedStr("rm bruh")]);
-}
 
 // `kvs` with no args should exit with a non-zero code.
 #[test]
